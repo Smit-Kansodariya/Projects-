@@ -1,129 +1,141 @@
-//Project name: Joystick control wheelchair using Arduino Board 
+// Project Title: Arduino-Based Wheelchair Control Using Joystick Module
 
-// Pin definitions
-#define VRX A0 // Define Joystick for X-axis
-#define VRY A1 // Define Joystick for Y-axis
-#define enA 5
-#define in1 6
-#define in2 7
-#define in3 8
-#define in4 9
-#define enB 10
+// === Pin Assignments ===
+#define JOY_X A0       // Joystick horizontal axis
+#define JOY_Y A1       // Joystick vertical axis
 
-int motorSpeed1 = 0;
-int motorSpeed2 = 0;
+#define MOTOR_A_PWM 5
+#define MOTOR_A_IN1 6
+#define MOTOR_A_IN2 7
+
+#define MOTOR_B_IN1 8
+#define MOTOR_B_IN2 9
+#define MOTOR_B_PWM 10
+
+// === Movement Constants ===
+const int DEAD_ZONE = 40;     // Neutral zone threshold around center (512)
+const int PWM_THRESHOLD = 70; // Minimum speed to trigger motor movement
+
+int speedLeft = 0;
+int speedRight = 0;
+
+// === Movement Types Enum ===
+enum MotionType { FORWARD, BACKWARD, TURN_LEFT, TURN_RIGHT };
 
 void setup() {
-  pinMode(VRX, INPUT);
-  pinMode(VRY, INPUT);
-  
-  pinMode(enA, OUTPUT);
-  pinMode(enB, OUTPUT);
-  pinMode(in1, OUTPUT);
-  pinMode(in2, OUTPUT);
-  pinMode(in3, OUTPUT);
-  pinMode(in4, OUTPUT);
+  pinMode(JOY_X, INPUT);
+  pinMode(JOY_Y, INPUT);
+
+  pinMode(MOTOR_A_PWM, OUTPUT);
+  pinMode(MOTOR_B_PWM, OUTPUT);
+
+  pinMode(MOTOR_A_IN1, OUTPUT);
+  pinMode(MOTOR_A_IN2, OUTPUT);
+  pinMode(MOTOR_B_IN1, OUTPUT);
+  pinMode(MOTOR_B_IN2, OUTPUT);
 }
 
 void loop() {
-  int xAxis = analogRead(VRX); // Read joystick for X-axis
-  int yAxis = analogRead(VRY); // Read joystick for Y-axis
+  int joyX = analogRead(JOY_X);  // Read horizontal input
+  int joyY = analogRead(JOY_Y);  // Read vertical input
 
-  motorSpeed1 = 0;
-  motorSpeed2 = 0;
+  // Reset speeds before logic
+  speedLeft = 0;
+  speedRight = 0;
 
-  // Joystick values range from 0–1023 and 512 is the center.
-  // Dead zone in center that Prevents motors from moving when joystick is near the center
-  if (xAxis > 470 && xAxis < 550 && yAxis > 470 && yAxis < 550) {
-    Stop();
-  } 
-  else if (xAxis > 470 && xAxis < 550) {
-    // Left or Right turning
-    if (yAxis < 470) {
-      turnRight();
-      int speed = map(yAxis, 470, 0, 0, 255);
-      motorSpeed1 = speed;
-      motorSpeed2 = speed;
-    } 
-    else if (yAxis > 550) {
-      turnLeft();
-      int speed = map(yAxis, 550, 1023, 0, 255);
-      motorSpeed1 = speed;
-      motorSpeed2 = speed;
-    }
-  } 
-  else {
-    // Forward or Backward and turning
-    if (xAxis < 470) {
-      forword();
-      motorSpeed1 = map(xAxis, 470, 0, 0, 255);
-      motorSpeed2 = motorSpeed1;
-    } 
-    else if (xAxis > 550) {
-      backword();
-      motorSpeed1 = map(xAxis, 550, 1023, 0, 255);
-      motorSpeed2 = motorSpeed1;
-    }
+  // Center check for stop (includes dead zone)
+  if (abs(joyX - 512) < DEAD_ZONE && abs(joyY - 512) < DEAD_ZONE) {
+    holdMotors();
+  } else {
+    computeMotorSpeeds(joyX, joyY);
 
-    // Fine steering adjustments with Y-axis
-    if (yAxis < 470) {
-      int yMapped = map(yAxis, 470, 0, 0, 255);
-      motorSpeed1 += yMapped;
-      motorSpeed2 -= yMapped;
-    } 
-    else if (yAxis > 550) {
-      int yMapped = map(yAxis, 550, 1023, 0, 255);
-      motorSpeed1 -= yMapped;
-      motorSpeed2 += yMapped;
-    }
+    // Apply minimum threshold to avoid motor jitter
+    if (speedLeft < PWM_THRESHOLD) speedLeft = 0;
+    if (speedRight < PWM_THRESHOLD) speedRight = 0;
 
-    // Clamp motor speeds
-    motorSpeed1 = constrain(motorSpeed1, 0, 255);
-    motorSpeed2 = constrain(motorSpeed2, 0, 255);
+    analogWrite(MOTOR_A_PWM, speedLeft);
+    analogWrite(MOTOR_B_PWM, speedRight);
   }
-
-  // Prevent buzzing: ignore very low PWM values
-  if (motorSpeed1 < 70) motorSpeed1 = 0;
-  if (motorSpeed2 < 70) motorSpeed2 = 0;
-
-  analogWrite(enA, motorSpeed1);
-  analogWrite(enB, motorSpeed2);
 
   delay(10);
 }
 
-// Movement functions
-void forword() {
-  digitalWrite(in1, HIGH);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, HIGH);
+// === Motion Logic ===
+void computeMotorSpeeds(int x, int y) {
+  if (abs(x - 512) < DEAD_ZONE) {
+    // Turning only (Y-axis movement)
+    if (y < 512 - DEAD_ZONE) {
+      activateMotors(TURN_RIGHT);
+      int mappedSpeed = map(y, 472, 0, 0, 255);
+      speedLeft = mappedSpeed;
+      speedRight = mappedSpeed;
+    } else if (y > 512 + DEAD_ZONE) {
+      activateMotors(TURN_LEFT);
+      int mappedSpeed = map(y, 552, 1023, 0, 255);
+      speedLeft = mappedSpeed;
+      speedRight = mappedSpeed;
+    }
+  } else {
+    // Forward or backward
+    if (x < 512 - DEAD_ZONE) {
+      activateMotors(FORWARD);
+      speedLeft = map(x, 472, 0, 0, 255);
+      speedRight = speedLeft;
+    } else if (x > 512 + DEAD_ZONE) {
+      activateMotors(BACKWARD);
+      speedLeft = map(x, 552, 1023, 0, 255);
+      speedRight = speedLeft;
+    }
+
+    // Fine steering using Y-axis
+    if (y < 512 - DEAD_ZONE) {
+      int adjust = map(y, 472, 0, 0, 255);
+      speedLeft += adjust;
+      speedRight -= adjust;
+    } else if (y > 512 + DEAD_ZONE) {
+      int adjust = map(y, 552, 1023, 0, 255);
+      speedLeft -= adjust;
+      speedRight += adjust;
+    }
+
+    speedLeft = constrain(speedLeft, 0, 255);
+    speedRight = constrain(speedRight, 0, 255);
+  }
 }
 
-void backword() {
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, HIGH);
-  digitalWrite(in3, HIGH);
-  digitalWrite(in4, LOW);
+
+void activateMotors(MotionType motion) {
+  switch (motion) {
+    case FORWARD:
+      digitalWrite(MOTOR_A_IN1, HIGH);
+      digitalWrite(MOTOR_A_IN2, LOW);
+      digitalWrite(MOTOR_B_IN1, LOW);
+      digitalWrite(MOTOR_B_IN2, HIGH);
+      break;
+    case BACKWARD:
+      digitalWrite(MOTOR_A_IN1, LOW);
+      digitalWrite(MOTOR_A_IN2, HIGH);
+      digitalWrite(MOTOR_B_IN1, HIGH);
+      digitalWrite(MOTOR_B_IN2, LOW);
+      break;
+    case TURN_LEFT:
+      digitalWrite(MOTOR_A_IN1, LOW);
+      digitalWrite(MOTOR_A_IN2, HIGH);
+      digitalWrite(MOTOR_B_IN1, LOW);
+      digitalWrite(MOTOR_B_IN2, HIGH);
+      break;
+    case TURN_RIGHT:
+      digitalWrite(MOTOR_A_IN1, HIGH);
+      digitalWrite(MOTOR_A_IN2, LOW);
+      digitalWrite(MOTOR_B_IN1, HIGH);
+      digitalWrite(MOTOR_B_IN2, LOW);
+      break;
+  }
 }
 
-void turnRight() {
-  digitalWrite(in1, HIGH);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, HIGH);
-  digitalWrite(in4, LOW);
-}
-
-void turnLeft() {
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, HIGH);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, HIGH);
-}
-
-void Stop() {
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, LOW);
+void holdMotors() {
+  digitalWrite(MOTOR_A_IN1, LOW);
+  digitalWrite(MOTOR_A_IN2, LOW);
+  digitalWrite(MOTOR_B_IN1, LOW);
+  digitalWrite(MOTOR_B_IN2, LOW);
 }
