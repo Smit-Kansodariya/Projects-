@@ -5,7 +5,7 @@
 #include <MFRC522.h>
 #include <LiquidCrystal_I2C.h>
 
-LiquidCrystal_I2C lcdDisplay(0x27, 16, 2);
+LiquidCrystal_I2C lcdDisplay(0x27, 16, 2); // 16 columns and 2 rows
 
 // Pin definitions
 #define RFID_SS 10
